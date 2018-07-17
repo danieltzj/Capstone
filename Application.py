@@ -427,10 +427,17 @@ piezo6 = OutputDevice(12)
 
 # Buzzer and sensor
 bz = Buzzer(16)
-sensor = DistanceSensor(20,21)
+sensor = DistanceSensor(20,21) # echo, trigger                                                                                             
 
 # turn off the buzzer first
 bz.on()
+
+# States
+currentState = 0
+idleState = 0
+captureState = 1
+outputState = 2
+pauseState = 3
 
 def capture_and_convert():
     camera.capture('/home/pi/Capstone/test.png')
@@ -440,7 +447,8 @@ def capture_and_convert():
         lang="eng",
         builder=pyocr.builders.TextBuilder()
     )
-    #print(txt)
+    print(txt)
+    return txt
     # txt is a Python string
     
 
@@ -449,38 +457,61 @@ while(True):
     # wait for the capture button to be pressed to start the sensor
     # Buzz when the text is in the distance threshold of the camera
     captureButton.wait_for_press()
-    while(True):
+    currentState = captureState
+    print("Capture button pressed!")
+    while(currentState == 1):
         print(sensor.distance)
-        if sensor.distance > 0.22 and sensor.distance < 0.24:
+        while sensor.distance > 0.22 and sensor.distance < 0.24:
             bz.beep()
-            captureButton.when_pressed = capture_and_convert
+            if captureButton.is_held:
+                txt = capture_and_convert()
+                print("Picture taken")
+                currentState = outputState
+                break
+        sleep(1)
 
     # Start outputting Braille
     i = 0 # counter for which character
-    while( i < len(txt)):
-        convert(txt[i])
-        sleep(0.4)
-         
-            if playPauseButton.is_pressed:
-                continue
-            else if backButton.is_pressed:
-                i--
+    
+    # Error handling on OCR on picture
+    try:
+        # For testing purposes
+        # print the whole translated text
+        print("The translated text is ")
+        print(txt)
 
-while(True):
-    piezo1.on()
-    piezo2.on()
-    piezo3.on()
-    piezo4.on()
-    piezo5.on()
-    piezo6.on()
-    sleep(2)
-    piezo1.off()
-    piezo2.off()
-    piezo3.off()
-    piezo4.off()
-    piezo5.off()
-    piezo6.off()
-    sleep(2)
+        while( i < len(txt)):
+            print(txt[i])
+            convert(txt[i])
+            sleep(0.4)
+            if playPauseButton.is_pressed and currentState == outputState:
+                print("Output Paused")
+                currentState = pauseState
+
+                while currentState == pauseState:
+                    # if the play/pause button is pressed, go back to the output state
+                    # to resume outputting braile for either the same or new index in the translated string
+                    if playPauseButton.is_held:
+                        print("Output Restarted")
+                        currentState = outputState
+                    # Whenever back button is pressed in this state, it will go back a single character
+                    # no change in current state as it's still in the pause state
+                    elif backButton.is_pressed:
+                        i = i-1
+                        convert(txt[i])
+                        sleep(0.4)
+                        print("Moved back to character ", txt[i], "from character ", txt[i+1])
+            i = i + 1
+        # Once finished outputting, go back to idle state
+        print("Text has finished outputting")
+        currentState = idleState
+    # Handle the exception of untranslatable picture
+    # Go back to idle state
+    except:
+        # 2 beeps to indicate an exception
+        print("There was a problem translating the picture, please try again")
+        bz.beep(2)
+        currentState = idleState
 
 #camera.start_preview()
 #sleep(10)
