@@ -7,6 +7,8 @@ from PIL import Image
 #gpiozero API to control gpio
 from gpiozero import *
 
+import os
+import subprocess
 import sys
 import pyocr
 import pyocr.builders
@@ -426,7 +428,7 @@ piezo5 = OutputDevice(5)
 piezo6 = OutputDevice(12)
 
 # Buzzer and sensor
-bz = Buzzer(16)
+bz = Buzzer(16, True, False)
 sensor = DistanceSensor(20,21) # echo, trigger                                                                                             
 
 # turn off the buzzer first
@@ -438,6 +440,8 @@ idleState = 0
 captureState = 1
 outputState = 2
 pauseState = 3
+epubState = 4
+pdfState = 5
 
 def capture_and_convert():
     camera.capture('/home/pi/Capstone/test.png')
@@ -450,68 +454,120 @@ def capture_and_convert():
     print(txt)
     return txt
     # txt is a Python string
-    
+
+# Turned on signal
+# bz.beep(n = 1, on_time = 0.5, off_time = 0.5, background = False)
+# bz.on()
 
 # Main Program Loop
 while(True):
-    # wait for the capture button to be pressed to start the sensor
-    # Buzz when the text is in the distance threshold of the camera
-    captureButton.wait_for_press()
-    currentState = captureState
-    print("Capture button pressed!")
-    while(currentState == 1):
+    # idle state - go into different modes depending on which button held
+    # capture button - capture mode
+    # playPause button - epub mode
+    # backButton - pdf mode
+    while currentState == idleState:
+        if captureButton.is_pressed:
+            currentState = captureState
+            print("Capture button pressed!")
+        elif playPauseButton.is_pressed:
+            currentState = epubState
+            print("epub mode")
+        elif backButton.is_pressed:
+            currentState = pdfState
+            print("pdf mode")
+
+    # epub mode
+    # converts an epub to text file and then reads from the file
+    # read the text from the text file and store it into the txt var
+    # after that, go onto the output state
+    if currentState == epubState:
+        print("hi")
+        os.system('"/usr/bin/editor" "/home/pi/Capstone/Application.py"')
+
+    # pdf mode
+    # converts the pdf to an image to perform OCR on
+    # store the text into txt var
+    # after that is done, will go into output state to output the text to braille
+    # if currentState == pdfState:
+
+    # Capture mode
+    # beep when the sensor is in the optimal focus distance of camera
+    # hold the capture button to capture a picture
+    while(currentState == captureState):
         print(sensor.distance)
         while sensor.distance > 0.22 and sensor.distance < 0.24:
-            bz.beep()
+            bz.beep(n = 1, on_time = 0.5,off_time = 0.5, background = True)
             if captureButton.is_held:
+                bz.on()
                 txt = capture_and_convert()
                 print("Picture taken")
                 currentState = outputState
                 break
+            sleep(1)
+            bz.on()
         sleep(1)
+        
 
-    # Start outputting Braille
-    i = 0 # counter for which character
-    
-    # Error handling on OCR on picture
-    try:
-        # For testing purposes
-        # print the whole translated text
-        print("The translated text is ")
-        print(txt)
+    # Output state
+    # outputs the braille via the text obtained from all the modes
+    # playPause and back button will work as their name suggests in this mode
+    if currentState == outputState:
+        # Start outputting Braille
+        i = 0 # counter for which character
+        
+        # Error handling on OCR on picture
+        try:
+            # For testing purposes
+            # print the whole translated text
+            print("The translated text is ")
+            print(txt)
 
-        while( i < len(txt)):
-            print(txt[i])
-            convert(txt[i])
-            sleep(0.4)
-            if playPauseButton.is_pressed and currentState == outputState:
-                print("Output Paused")
-                currentState = pauseState
+            while( i < len(txt) and currentState == outputState):
+                print(txt[i])
+                # Check for capital letters first
+                # dot 6 is on to indicate next letter is capitalized
+                if txt[i] in 'ABCDEFGHIJKLMNOPQRSTUVWXYZ':
+                    piezo1.off()
+                    piezo2.off()
+                    piezo3.off()
+                    piezo4.off()
+                    piezo5.off()
+                    piezo6.on()
 
-                while currentState == pauseState:
-                    # if the play/pause button is pressed, go back to the output state
-                    # to resume outputting braile for either the same or new index in the translated string
-                    if playPauseButton.is_held:
-                        print("Output Restarted")
-                        currentState = outputState
-                    # Whenever back button is pressed in this state, it will go back a single character
-                    # no change in current state as it's still in the pause state
-                    elif backButton.is_pressed:
-                        i = i-1
-                        convert(txt[i])
-                        sleep(0.4)
-                        print("Moved back to character ", txt[i], "from character ", txt[i+1])
-            i = i + 1
-        # Once finished outputting, go back to idle state
-        print("Text has finished outputting")
-        currentState = idleState
-    # Handle the exception of untranslatable picture
-    # Go back to idle state
-    except:
-        # 2 beeps to indicate an exception
-        print("There was a problem translating the picture, please try again")
-        bz.beep(2)
-        currentState = idleState
+                    sleep(1)
+                convert(txt[i])
+                sleep(0.4)
+                if playPauseButton.is_pressed and currentState == outputState:
+                    print("Output Paused")
+                    currentState = pauseState
+
+                    while currentState == pauseState:
+                        # if the play/pause button is pressed, go back to the output state
+                        # to resume outputting braile for either the same or new index in the translated string
+                        if playPauseButton.is_held:
+                            print("Output Restarted")
+                            currentState = outputState
+                        # Whenever back button is pressed in this state, it will go back a single character
+                        # no change in current state as it's still in the pause state
+                        elif backButton.is_pressed:
+                            i = i-1
+                            convert(txt[i])
+                            print("Moved back to character ", txt[i], "from character ", txt[i+1])
+                        # if the user wants to exit early
+                        elif captureButton.is_held:
+                            currentState = idleState
+                            break
+                i = i + 1
+            # Once finished outputting, go back to idle state
+            print("Text has finished outputting")
+            currentState = idleState
+        # Handle the exception of untranslatable picture
+        # Go back to idle state
+        except:
+            # 2 beeps to indicate an exception
+            print("There was a problem translating the picture, please try again")
+            bz.beep(2)
+            currentState = idleState
 
 #camera.start_preview()
 #sleep(10)
