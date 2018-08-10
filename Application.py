@@ -2,7 +2,17 @@
 # Camera functions to control rasp pi camera
 from picamera import PiCamera
 from time import sleep
+from wand.image import Image as WandImage
 from PIL import Image
+import io
+
+from epub_conversion.utils import open_book
+
+import ebooklib
+from ebooklib import epub
+import nltk
+
+import fulltext
 
 #gpiozero API to control gpio
 from gpiozero import *
@@ -429,7 +439,7 @@ piezo6 = OutputDevice(12)
 
 # Buzzer and sensor
 bz = Buzzer(16, True, False)
-sensor = DistanceSensor(20,21) # echo, trigger                                                                                             
+#sensor = DistanceSensor(20,21) # echo, trigger                                                                                             
 
 # turn off the buzzer first
 bz.on()
@@ -442,6 +452,23 @@ outputState = 2
 pauseState = 3
 epubState = 4
 pdfState = 5
+
+text = fulltext.get('/home/pi/Capstone/Legend.epub', None)
+print(text)
+print("done")
+
+#book = epub.read_epub('/home/pi/Capstone/Legend.epub')
+#new_book = []
+
+##for doc in book.get_items():
+##    doc_content = str(doc.content)
+##    for w in nltk.word_tokenize(doc_content):
+##        new_book.append(w.lower())
+##        print(w)
+####
+##print(new_book)
+
+sleep(10000)
 
 def capture_and_convert():
     camera.capture('/home/pi/Capstone/test.png')
@@ -466,23 +493,23 @@ while(True):
     # playPause button - epub mode
     # backButton - pdf mode
     while currentState == idleState:
-        if captureButton.is_pressed:
+        if captureButton.is_held:
             currentState = captureState
             print("Capture button pressed!")
-        elif playPauseButton.is_pressed:
-            currentState = epubState
-            print("epub mode")
-        elif backButton.is_pressed:
-            currentState = pdfState
-            print("pdf mode")
+        #elif playPauseButton.is_held:
+            #currentState = epubState
+            #print("epub mode")
+        #elif backButton.is_held:
+            #currentState = pdfState
+            #print("pdf mode")
 
     # epub mode
     # converts an epub to text file and then reads from the file
     # read the text from the text file and store it into the txt var
     # after that, go onto the output state
-    if currentState == epubState:
-        print("hi")
-        os.system('"/usr/bin/editor" "/home/pi/Capstone/Application.py"')
+    #if currentState == epubState:
+    #    print("hi")
+    #    os.system('"/usr/bin/editor" "/home/pi/Capstone/Application.py"')
 
     # pdf mode
     # converts the pdf to an image to perform OCR on
@@ -505,7 +532,7 @@ while(True):
                 break
             sleep(1)
             bz.on()
-        sleep(1)
+        sleep(0.5)
         
 
     # Output state
@@ -553,8 +580,9 @@ while(True):
                             i = i-1
                             convert(txt[i])
                             print("Moved back to character ", txt[i], "from character ", txt[i+1])
+                            sleep(0.5)
                         # if the user wants to exit early
-                        elif captureButton.is_held:
+                        elif captureButton.is_pressed and playPauseButton.is_pressed:
                             currentState = idleState
                             break
                 i = i + 1
